@@ -1,2 +1,7 @@
 # Directories to Ignore #
 env/
+output/
+# Types of Files to Ignore#
+*.zip
+*.html
+*.csv
