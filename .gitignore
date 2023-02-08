@@ -1,6 +1,7 @@
 # Directories to Ignore #
 env/
 output/
+.vscode/
 # Types of Files to Ignore#
 *.zip
 *.html
