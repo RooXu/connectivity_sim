@@ -43,9 +43,12 @@ class Walker(core.Agent):
         self.pt = grid.move(self, dpt(self.pt.x + xy_dirs[0],\
                                       self.pt.y + xy_dirs[1],\
                                       0))
-walker_cache = {} # this cache maintains all the created walkers in this model!
+walker_cache = {} 
+# this cache maintains all pointers of the created walkers in this model! (pointers don't exist in python, but I think it works like that.)
+# It seems like the cache is never accessed by any other method other and restore walker. This is, in other words, more like a private variable. 
+# To edit or update walker states, see the Model Class
 
-def resore_walker(walker_data: Tuple): 
+def restore_walker(walker_data: Tuple): 
     """
     Args:
         walker_data: tuple containing the data returned by Walker.save.
@@ -62,6 +65,30 @@ def resore_walker(walker_data: Tuple):
         walker = Walker(uid[0], uid[2], pt)     # Else create a new
         walker_cache[uid] = walker
 
-    walker.meet_count = walker_data[1]
     walker.pt = pt
     return walker
+
+class Model: # inherits nothing
+    """
+    The Model class encapsulates the simulation, and is
+    responsible for initialization (scheduling events, creating agents,
+    and the grid the agents inhabit), and the overall iterating
+    behavior of the model.
+
+    Args:
+        comm: the mpi communicator over which the model is distributed.
+        params: the simulation input parameters
+    """
+    def __init__(self, comm: MPI.Intracomm, params: Dict): 
+        # create the schedule 
+        self.runner = schedule.init_schedule_runner(comm)
+        self.runner.schedule_repeating_event(1,1,self.step)
+        # self.runner.schedule_repeating_event(<when to start>,<how often>,self.<method>)
+        self.runner.schedule_stop(params['stop.at'])
+        self.runner.schedule_end_event(self.at_end) 
+
+        # create the context to hold the agents and manage cross process synchronization
+        self.context = ctx.SharedContext(comm) 
+
+        # create a bounding box equal to the size of the entire global world grid
+        box = space.BoundingBox(0, params['world.width'], 0, params['world.height'], 0, 0)
