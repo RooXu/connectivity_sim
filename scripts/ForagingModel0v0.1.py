@@ -15,9 +15,16 @@ from repast4py import context as ctx
 import repast4py
 from repast4py.space import DiscretePoint as dpt
 
+# No need for agreggate data yet
+"""@dataclass
+class travelLog:
+    xLoc: int = 0
+    yLoc: int = 0"""
+
 class Walker(core.Agent): 
-    Type = 0 
-    distribution = None
+    TYPE = 0 
+    OFFSETS = np.array([1, -1])
+    #distribution = None
 
     # The initialization method that runs upon object initialization
     # The arguments are what I want for my custom walker.
@@ -39,6 +46,7 @@ class Walker(core.Agent):
         # move in those directions 
 
         # <WIP Code> 
+        xy_dirs = random.default_rng.choice(Walker.OFFSETS, size = 2)
 
         self.pt = grid.move(self, dpt(self.pt.x + xy_dirs[0],\
                                       self.pt.y + xy_dirs[1],\
@@ -83,12 +91,69 @@ class Model: # inherits nothing
         # create the schedule 
         self.runner = schedule.init_schedule_runner(comm)
         self.runner.schedule_repeating_event(1,1,self.step)
+        self.runner.schedule_repeating_event(1.1,1,self.log_agents)
         # self.runner.schedule_repeating_event(<when to start>,<how often>,self.<method>)
         self.runner.schedule_stop(params['stop.at'])
-        self.runner.schedule_end_event(self.at_end) 
+        self.runner.schedule_end_event(self.at_end)
 
         # create the context to hold the agents and manage cross process synchronization
         self.context = ctx.SharedContext(comm) 
 
         # create a bounding box equal to the size of the entire global world grid
         box = space.BoundingBox(0, params['world.width'], 0, params['world.height'], 0, 0)
+        # create a SharedGrid of 'box' size with sticky borders that allows multiple agents
+        # in each grid location.
+        self.grid = space.SharedGrid(name='grid', bounds=box, borders=space.BorderType.Sticky,
+                                     occupancy=space.OccupancyType.Multiple, buffer_size=2, comm=comm)
+        self.context.add_projection(self.grid)      
+        rank = comm.Get_rank()                       
+        
+        """rng = repast4py.random.default_rng
+        for i in range(params['walker.count']):
+            # get a random x,y location in the grid
+            pt = self.grid.get_random_local_pt(rng)
+            # create and add the walker to the context
+            walker = Walker(i, rank, pt)
+            self.context.add(walker)
+            self.grid.move(walker, pt)"""
+        
+        # initialize individual logging
+        self.agent_logger = logging.TabularLogger(comm, params['agent_log_file'],\
+            ['tick', 'agent_id', 'agent_uid_rank', 'x', 'y'])
+        
+        # Count initial data at time t = 0 and log
+        
+    def step(self):
+        for walker in self.context.agents(): 
+            walker.walk(self.grid)
+        
+        self.context.synchronize(restore_walker)
+
+        # Insert aggregate logging stuff. 
+
+        tick = self.runner.schedule.tick 
+        self.data_set.log(tick)
+        # Clear temporary agregate variables for next tick
+
+    def log_agents(self): 
+        tick = self.runner.schedule.tick
+        for walker in self.context.agents():
+            self.agent_logger.log(tick, walker.id,walker.uid_rank, walker.pt.x,walker.pt.y)
+        self.agent_logger.write() #not necessary to call every time. Potential for optimization by deciding how often to write
+    
+    def at_end(self):
+        self.data_set.close()
+        self.agent_logger.close()
+    
+    def start(self):
+        self.runner.execute() 
+
+def run(params: Dict):
+    model = model(MPI.COMM_WORLD, params)
+    model.start()
+
+if __name__ == "__main__":
+    parser = parameters.create_args_parser()
+    args = parser.parse_args()
+    params = parameters.init_params(args.parameters_file, args.parameters)
+    run(params)
