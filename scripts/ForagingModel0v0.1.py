@@ -30,7 +30,7 @@ class Walker(core.Agent):
     # The arguments are what I want for my custom walker.
     def __init__(self, local_object_id: int, rank: int, pt: dpt): 
         # Initialize the parent class 
-        super().__init__(id=local_object_id,type=Walker.Type,rank=rank)
+        super().__init__(id=local_object_id,type=Walker.TYPE,rank=rank)
         self.pt = pt #Init the variable used for storing agent location.
     
     def save(self) -> Tuple:
@@ -108,14 +108,15 @@ class Model: # inherits nothing
         self.context.add_projection(self.grid)      
         rank = comm.Get_rank()                       
         
-        """rng = repast4py.random.default_rng
+        # Populate world with walkers
+        rng = repast4py.random.default_rng
         for i in range(params['walker.count']):
             # get a random x,y location in the grid
             pt = self.grid.get_random_local_pt(rng)
             # create and add the walker to the context
             walker = Walker(i, rank, pt)
             self.context.add(walker)
-            self.grid.move(walker, pt)"""
+            self.grid.move(walker, pt)
         
         # initialize individual logging
         self.agent_logger = logging.TabularLogger(comm, params['agent_log_file'],\
@@ -129,27 +130,26 @@ class Model: # inherits nothing
         
         self.context.synchronize(restore_walker)
 
-        # Insert aggregate logging stuff. 
-
-        tick = self.runner.schedule.tick 
-        self.data_set.log(tick)
+        # <WIP> Insert aggregate logging stuff. 
+            #tick = self.runner.schedule.tick 
+            #self.data_set.log(tick)
         # Clear temporary agregate variables for next tick
 
     def log_agents(self): 
         tick = self.runner.schedule.tick
         for walker in self.context.agents():
-            self.agent_logger.log(tick, walker.id,walker.uid_rank, walker.pt.x,walker.pt.y)
+            self.agent_logger.log_row(tick, walker.id,walker.uid_rank, walker.pt.x,walker.pt.y)
         self.agent_logger.write() #not necessary to call every time. Potential for optimization by deciding how often to write
     
     def at_end(self):
-        self.data_set.close()
+        #self.data_set.close() #commented out because no aggregate data collection yet
         self.agent_logger.close()
     
     def start(self):
         self.runner.execute() 
 
 def run(params: Dict):
-    model = model(MPI.COMM_WORLD, params)
+    model = Model(MPI.COMM_WORLD, params)
     model.start()
 
 if __name__ == "__main__":
