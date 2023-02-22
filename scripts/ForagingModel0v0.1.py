@@ -14,6 +14,9 @@ from repast4py import core, random, space, schedule, logging, parameters
 from repast4py import context as ctx
 import repast4py
 from repast4py.space import DiscretePoint as dpt
+import torch 
+
+from typing import Optional
 
 # No need for agreggate data yet
 """@dataclass
@@ -24,6 +27,8 @@ class travelLog:
 class Walker(core.Agent): 
     TYPE = 0 
     OFFSETS = np.array([1, -1])
+    
+    
     #distribution = None
 
     # The initialization method that runs upon object initialization
@@ -32,25 +37,65 @@ class Walker(core.Agent):
         # Initialize the parent class 
         super().__init__(id=local_object_id,type=Walker.TYPE,rank=rank)
         self.pt = pt #Init the variable used for storing agent location.
-    
+        self.qualityMem =  torch.zeros(gridShape, dtype=torch.half) # initialize variable used for storing agent memory. Starts at 0
+        #self.attractionMem =  torch.zeros(gridShape, dtype=torch.half) # initialize variable used for storing agent memory. Starts at 0
+            # may not need to initialize this 
+
     def save(self) -> Tuple:
         """Saves the state of this Walker as a Tuple.
         Returns:
             The saved state of this Walker.
         """
-        return (self.uid, self.pt.coordinates)
+        return (self.uid, self.pt.coordinates, self.qualityMem)
 
-    def walk(self, grid): 
+    
+
+    def rndwalk(self, grid): 
         # sample from a distribution for theta and r 
         # convert to x and y coordinates 
         # move in those directions 
 
         # <WIP Code> 
-        xy_dirs = random.default_rng.choice(Walker.OFFSETS, size = 2)
+        #xy_dirs = random.default_rng.choice(Walker.OFFSETS, size = 2)
 
-        self.pt = grid.move(self, dpt(self.pt.x + xy_dirs[0],\
-                                      self.pt.y + xy_dirs[1],\
+        np.random.seed()
+        x_dirs = round(np.random.normal(0.0, 2.0))
+        y_dirs = round(np.random.normal(0.0, 2.0))
+
+        self.pt = grid.move(self, dpt(self.pt.x + x_dirs,\
+                                      self.pt.y + y_dirs,\
                                       0))
+        
+    def memoryWalk(self, grid, values): 
+        
+        # Import qualityValuesFromGrid range[0,1] or bool
+        quality = values.grid
+        
+        # calculate distnace matrix
+        perceptionMat = calcDist()
+        
+        #mulitply true quality with the perceptionTensor 
+        quality.mul(perceptionMat)
+        
+        quashedExpec = (1 - np.exp(-beta*dT))*expectation #scalar 
+        
+        quality.add(perceptionMat.mul(-1).add(1).mul(self.qualityMem.mul(expectation).add(quashedExpec))) 
+        # quality + [(-1)*perceptionMat + 1 ]*[previousqualityMem*forgetting + expectation_envelope*expectation]    
+
+        self.qualityMem = quality
+
+        costFunc = # is a 2D tensor
+        
+        quality = quality.mul(costFunc) #now is the attraction matrix. currently only supports one layer 
+
+        probability = torch.divide(quality,torch.cumsum(quality)) 
+
+        #choose which index to move to based on the probability kernel 
+
+        self.pt = grid.move(self, dpt(newX,\
+                                      newY,\
+                                      0))
+
 walker_cache = {} 
 # this cache maintains all pointers of the created walkers in this model! (pointers don't exist in python, but I think it works like that.)
 # It seems like the cache is never accessed by any other method other and restore walker. This is, in other words, more like a private variable. 
@@ -75,6 +120,11 @@ def restore_walker(walker_data: Tuple):
 
     walker.pt = pt
     return walker
+
+#class World(repast4py.value_layer.ReadWriteValyeLayer):
+#    def __init__(self,comm: MPI.Intracomm, params: Dict, borders: repast4py.space.BorderType, buffer_size: int, init_value: float):
+
+
 
 class Model: # inherits nothing
     """
@@ -101,13 +151,19 @@ class Model: # inherits nothing
 
         # create a bounding box equal to the size of the entire global world grid
         box = space.BoundingBox(0, params['world.width'], 0, params['world.height'], 0, 0)
+        
         # create a SharedGrid of 'box' size with sticky borders that allows multiple agents
         # in each grid location.
         self.grid = space.SharedGrid(name='grid', bounds=box, borders=space.BorderType.Sticky,
                                      occupancy=space.OccupancyType.Multiple, buffer_size=2, comm=comm)
-        self.context.add_projection(self.grid)      
-        rank = comm.Get_rank()                       
         
+        self.context.add_projection(self.grid)      
+        rank = comm.Get_rank()                     
+
+        # Create Vanilla ValueLayer 
+        self.worldValuaA = repast4py.value_layer.ValueLayer(comm, box, borders=space.BorderType.Sticky, init_value = 'random')
+            # init_values should be made with image 
+
         # Populate world with walkers
         rng = repast4py.random.default_rng
         for i in range(params['walker.count']):
@@ -126,10 +182,10 @@ class Model: # inherits nothing
         
     def step(self):
         for walker in self.context.agents(): 
-            walker.walk(self.grid)
+            walker.walk(self.grid,self.worldValuaA)
         
         self.context.synchronize(restore_walker)
-
+        #self.worldMatrix.swap_layers()
         # <WIP> Insert aggregate logging stuff. 
             #tick = self.runner.schedule.tick 
             #self.data_set.log(tick)

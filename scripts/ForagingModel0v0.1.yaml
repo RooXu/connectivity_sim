@@ -1,6 +1,6 @@
 random.seed: 42
-stop.at: 50
+stop.at: 1000
 walker.count: 1
-world.width: 100
-world.height: 100
+world.width: 1000
+world.height: 1000
 agent_log_file: '../output/agent_log.csv'
