@@ -18,11 +18,17 @@ import torch
 
 from typing import Optional
 
+from perlin_noise import PerlinNoise
+
+import mk_insert_distance
+
 # No need for agreggate data yet
 """@dataclass
 class travelLog:
     xLoc: int = 0
     yLoc: int = 0"""
+
+KERNEL = mk_insert_distance.makeDistanceKernel(dmax_unitless,dmax_unitless)
 
 class Walker(core.Agent): 
     TYPE = 0 
@@ -40,6 +46,10 @@ class Walker(core.Agent):
         self.qualityMem =  torch.zeros(gridShape, dtype=torch.half) # initialize variable used for storing agent memory. Starts at 0
         #self.attractionMem =  torch.zeros(gridShape, dtype=torch.half) # initialize variable used for storing agent memory. Starts at 0
             # may not need to initialize this 
+        self.alpha = 1
+        self.beta  = 1
+        self.dT = 1
+        self.expectation = 0
 
     def save(self) -> Tuple:
         """Saves the state of this Walker as a Tuple.
@@ -72,17 +82,17 @@ class Walker(core.Agent):
         quality = values.grid
         
         # calculate distnace matrix
-        perceptionMat = calcDist()
+        perceptionMat = mk_insert_distance.makePasteBounds(location, len(KERNEL), worldSize:tuple, KERNEL)
         
         #mulitply true quality with the perceptionTensor 
-        quality.mul(perceptionMat)
+        quality.mul_(perceptionMat)
         
-        quashedExpec = (1 - np.exp(-beta*dT))*expectation #scalar 
+        quashedExpec = (1 - np.exp(-self.beta*self.dT))*self.expectation #scalar 
         
-        quality.add(perceptionMat.mul(-1).add(1).mul(self.qualityMem.mul(expectation).add(quashedExpec))) 
+        quality.add_(perceptionMat.mul_(-1).add_(1).mul_(self.qualityMem.mul_(self.expectation).add_(quashedExpec))) 
         # quality + [(-1)*perceptionMat + 1 ]*[previousqualityMem*forgetting + expectation_envelope*expectation]    
 
-        self.qualityMem = quality
+        self.qualityMem = quality.clone()
 
         costFunc = # is a 2D tensor
         
@@ -90,11 +100,20 @@ class Walker(core.Agent):
 
         probability = torch.divide(quality,torch.cumsum(quality)) 
 
-        #choose which index to move to based on the probability kernel 
+        probFlat =  probability.flatten().numpy()
 
-        self.pt = grid.move(self, dpt(newX,\
-                                      newY,\
-                                      0))
+        #if the 1D index starts with zero, the algorithm to recover its unflattened index is 
+        # col = idx%length(col) 
+        # row = int(idx/length(col))
+
+        idx1D = np.random.choice(np.arange(len(probFlat)), 1, probFlat)  #<- choose which index to move to based on the probability kernel 
+
+        dim1Size = quality.size(dim=1) 
+        if dim1Size != gridWidth: 
+            print("dim1Size != gridWidth") 
+        newX = idx1D % dim1Size
+        newY = int(idx1D/ dim1Size)
+        self.pt = grid.move(self, dpt(newX,newY,0))
 
 walker_cache = {} 
 # this cache maintains all pointers of the created walkers in this model! (pointers don't exist in python, but I think it works like that.)
@@ -124,6 +143,11 @@ def restore_walker(walker_data: Tuple):
 #class World(repast4py.value_layer.ReadWriteValyeLayer):
 #    def __init__(self,comm: MPI.Intracomm, params: Dict, borders: repast4py.space.BorderType, buffer_size: int, init_value: float):
 
+def makePerlinRaster(widtha,widthb,heighta,heightb): 
+    noise = PerlinNoise(octaves=10, seed=1)
+    xpix, ypix = widthb, heightb
+    pic = [[noise([i/xpix, j/ypix]) for j in range(xpix)] for i in range(ypix)]
+    return pic
 
 
 class Model: # inherits nothing
@@ -161,7 +185,9 @@ class Model: # inherits nothing
         rank = comm.Get_rank()                     
 
         # Create Vanilla ValueLayer 
-        self.worldValuaA = repast4py.value_layer.ValueLayer(comm, box, borders=space.BorderType.Sticky, init_value = 'random')
+        self.raster = makePerlinRaster(0, params['world.width'], 0, params['world.height']) # can source the raster from other places 
+
+        self.worldValuaA = repast4py.value_layer.ValueLayer(comm, box, borders=space.BorderType.Sticky, init_value = self.raster)
             # init_values should be made with image 
 
         # Populate world with walkers
@@ -182,7 +208,7 @@ class Model: # inherits nothing
         
     def step(self):
         for walker in self.context.agents(): 
-            walker.walk(self.grid,self.worldValuaA)
+            walker.memoryWalk(self.grid,self.worldValuaA)
         
         self.context.synchronize(restore_walker)
         #self.worldMatrix.swap_layers()
