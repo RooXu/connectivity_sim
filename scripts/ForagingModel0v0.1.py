@@ -22,13 +22,21 @@ from perlin_noise import PerlinNoise
 
 import mk_insert_distance
 
+import matplotlib.pyplot as plt
 # No need for agreggate data yet
 """@dataclass
 class travelLog:
     xLoc: int = 0
     yLoc: int = 0"""
 
-KERNEL = mk_insert_distance.makeDistanceKernel(dmax_unitless,dmax_unitless)
+DT = 0.7
+GAMA = 1
+ALPHA = 1
+BETA = 1
+
+DMAX = -DT * np.log(0.01) / GAMA
+EXPECTATION = 0
+KERNEL = mk_insert_distance.makeDistanceKernel(int(DMAX),DMAX)
 
 class Walker(core.Agent): 
     TYPE = 0 
@@ -39,28 +47,33 @@ class Walker(core.Agent):
 
     # The initialization method that runs upon object initialization
     # The arguments are what I want for my custom walker.
-    def __init__(self, local_object_id: int, rank: int, pt: dpt): 
+    def __init__(self, local_object_id: int, rank: int, pt: dpt, grid, initMemory = None): 
         # Initialize the parent class 
+        
         super().__init__(id=local_object_id,type=Walker.TYPE,rank=rank)
         self.pt = pt #Init the variable used for storing agent location.
-        self.qualityMem =  torch.zeros(gridShape, dtype=torch.half) # initialize variable used for storing agent memory. Starts at 0
+        self.gridShape = [grid.get_local_bounds().yextent, grid.get_local_bounds().xextent]
+        if initMemory == None:
+            self.qualityMem =  torch.zeros(self.gridShape, dtype=torch.half) # initialize variable used for storing agent memory. Starts at 0
+        else:
+            self.qualityMem = initMemory
         #self.attractionMem =  torch.zeros(gridShape, dtype=torch.half) # initialize variable used for storing agent memory. Starts at 0
             # may not need to initialize this 
-        self.alpha = 1
-        self.beta  = 1
-        self.dT = 1
-        self.expectation = 0
+        self.alpha = ALPHA
+        self.beta  = BETA
+        self.gama = GAMA
+        self.dT = DT
+        self.expectation = EXPECTATION
 
     def save(self) -> Tuple:
         """Saves the state of this Walker as a Tuple.
         Returns:
             The saved state of this Walker.
         """
-        return (self.uid, self.pt.coordinates, self.qualityMem)
-
+        return (self.uid, self.pt.coordinates, self.qualityMem, self.gridShape)
     
 
-    def rndwalk(self, grid): 
+    def rndwalk(self, grid):
         # sample from a distribution for theta and r 
         # convert to x and y coordinates 
         # move in those directions 
@@ -76,48 +89,58 @@ class Walker(core.Agent):
                                       self.pt.y + y_dirs,\
                                       0))
         
-    def memoryWalk(self, grid, values): 
+    def memoryWalk(self, worldgrid, qualityvalues): 
         
         # Import qualityValuesFromGrid range[0,1] or bool
-        quality = values.grid
-        
+        quality = qualityvalues.grid
+        print("Step 1: Import Quality Grid")
+        print(quality)
+        print("memoryWalk: the grid shape is: ", self.gridShape)
         # calculate distnace matrix
-        perceptionMat = mk_insert_distance.makePasteBounds(location, len(KERNEL), worldSize:tuple, KERNEL)
-        
+    
+        perceptionMat = mk_insert_distance.pasteKernel([self.pt.x, self.pt.y], len(KERNEL), self.gridShape, KERNEL)
+        print("Step 2: The Distance matrix d_i,j is:")
+        print(perceptionMat)
+        print(perceptionMat.shape)
+        #print(quality.shape)
         #mulitply true quality with the perceptionTensor 
-        quality.mul_(perceptionMat)
-        
+        quality.mul_(perceptionMat[4])
+        print("Step 3: Multiply quality by perceptionMatrix")
+        print(quality) 
+
         quashedExpec = (1 - np.exp(-self.beta*self.dT))*self.expectation #scalar 
         
-        quality.add_(perceptionMat.mul_(-1).add_(1).mul_(self.qualityMem.mul_(self.expectation).add_(quashedExpec))) 
+        quality.add_(perceptionMat.mul(-1).add_(1).mul_(self.qualityMem.mul_(self.expectation).add_(quashedExpec))) 
         # quality + [(-1)*perceptionMat + 1 ]*[previousqualityMem*forgetting + expectation_envelope*expectation]    
 
         self.qualityMem = quality.clone()
 
-        costFunc = # is a 2D tensor
+        costFunc = torch.exp_(-self.gama * perceptionMat / self.dT)# is a 2D tensor
         
         quality = quality.mul(costFunc) #now is the attraction matrix. currently only supports one layer 
-
-        probability = torch.divide(quality,torch.cumsum(quality)) 
-
+        print(quality)
+        probability = torch.divide(quality,torch.sum(quality)) 
+        print(probability)
         probFlat =  probability.flatten().numpy()
-
+        print(probFlat)
         #if the 1D index starts with zero, the algorithm to recover its unflattened index is 
         # col = idx%length(col) 
         # row = int(idx/length(col))
 
-        idx1D = np.random.choice(np.arange(len(probFlat)), 1, probFlat)  #<- choose which index to move to based on the probability kernel 
+        idx1D = np.random.choice(a = len(probFlat), size = 1, replace = True, p = probFlat)  #<- choose which index to move to based on the probability kernel 
 
         dim1Size = quality.size(dim=1) 
-        if dim1Size != gridWidth: 
+        if dim1Size != self.gridShape[1]: 
             print("dim1Size != gridWidth") 
-        newX = idx1D % dim1Size
-        newY = int(idx1D/ dim1Size)
-        self.pt = grid.move(self, dpt(newX,newY,0))
+        newX = idx1D[0] % dim1Size
+        print("newX is:", newX)
+        newY = int(idx1D[0]/ dim1Size)
+        print("newY is:", newY)
+        self.pt = worldgrid.move(self, dpt(newX,newY,0))
 
 walker_cache = {} 
 # this cache maintains all pointers of the created walkers in this model! (pointers don't exist in python, but I think it works like that.)
-# It seems like the cache is never accessed by any other method other and restore walker. This is, in other words, more like a private variable. 
+# It seems like the cache is never accessed by any other method other and restore walker. This is, in other words, should be like a private variable. 
 # To edit or update walker states, see the Model Class
 
 def restore_walker(walker_data: Tuple): 
@@ -130,24 +153,27 @@ def restore_walker(walker_data: Tuple):
     uid = walker_data[0]
     pt_array = walker_data[2]
     pt = dpt(pt_array[0], pt_array[1], 0)
-
+    memory = walker_data[3]
+    gridShape = walker_data[4]
     if uid in walker_cache:                     # If the uid exists in the cache
         walker = walker_cache[uid]              # point to an existing walker 
     else:
-        walker = Walker(uid[0], uid[2], pt)     # Else create a new
+        walker = Walker(uid[0], uid[2], pt, memory, gridShape)     # Else create a new
         walker_cache[uid] = walker
 
-    walker.pt = pt
+    #walker.pt = pt
     return walker
 
 #class World(repast4py.value_layer.ReadWriteValyeLayer):
 #    def __init__(self,comm: MPI.Intracomm, params: Dict, borders: repast4py.space.BorderType, buffer_size: int, init_value: float):
 
 def makePerlinRaster(widtha,widthb,heighta,heightb): 
-    noise = PerlinNoise(octaves=10, seed=1)
+    noise = PerlinNoise(octaves=1, seed=8)
     xpix, ypix = widthb, heightb
     pic = [[noise([i/xpix, j/ypix]) for j in range(xpix)] for i in range(ypix)]
-    return pic
+    plt.imshow(pic)
+    plt.show()
+    return torch.FloatTensor(pic).clamp_min(0)
 
 
 class Model: # inherits nothing
@@ -187,16 +213,18 @@ class Model: # inherits nothing
         # Create Vanilla ValueLayer 
         self.raster = makePerlinRaster(0, params['world.width'], 0, params['world.height']) # can source the raster from other places 
 
-        self.worldValuaA = repast4py.value_layer.ValueLayer(comm, box, borders=space.BorderType.Sticky, init_value = self.raster)
+        self.worldValuaA = repast4py.value_layer.SharedValueLayer(comm, box, borders=space.BorderType.Sticky, buffer_size = int(DMAX)
+         ,init_value = self.raster)
             # init_values should be made with image 
 
         # Populate world with walkers
-        rng = repast4py.random.default_rng
+        rng = np.random.default_rng(seed=1)
         for i in range(params['walker.count']):
             # get a random x,y location in the grid
-            pt = self.grid.get_random_local_pt(rng)
+            #pt = self.grid.get_random_local_pt(rng)
+            pt = dpt(7,20)
             # create and add the walker to the context
-            walker = Walker(i, rank, pt)
+            walker = Walker(i, rank, pt, grid=self.grid)
             self.context.add(walker)
             self.grid.move(walker, pt)
         
@@ -219,6 +247,9 @@ class Model: # inherits nothing
 
     def log_agents(self): 
         tick = self.runner.schedule.tick
+        print("TICK TICK TICK" ,tick)
+        #if tick == 2.1: 
+        #    quit()
         for walker in self.context.agents():
             self.agent_logger.log_row(tick, walker.id,walker.uid_rank, walker.pt.x,walker.pt.y)
         self.agent_logger.write() #not necessary to call every time. Potential for optimization by deciding how often to write

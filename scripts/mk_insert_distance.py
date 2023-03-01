@@ -11,6 +11,7 @@ def makeDistanceKernel(size,dmax = 1000): # Make Distance Kernel
         size += 1 
     
     centerindex = int(size/2) 
+    print(size)
     prekernelX = torch.empty((size,size),dtype=torch.float)
     prekernelY = torch.empty((size,size),dtype=torch.float)
     for i in range(size):
@@ -58,11 +59,11 @@ def makePasteBounds(location, kernSize, worldSize:tuple, kernel:torch.tensor):
         colinit=0
 
     if rowfin >= worldSize[0]:
-        kernel = kernel[0:rowfin-worldSize[0],:]
+        kernel = kernel[0:(kernSize-(rowfin-worldSize[0])),:]
         rowfin = worldSize[0]-1
 
     if colfin >= worldSize[1]:
-        kernel = kernel[:,0:colfin-worldSize[1]]
+        kernel = kernel[:,0:(kernSize-(colfin-worldSize[1]+1))]
         colfin = worldSize[1]-1
 
     return [rowinit,rowfin,colinit,colfin,kernel]
@@ -70,7 +71,16 @@ def makePasteBounds(location, kernSize, worldSize:tuple, kernel:torch.tensor):
 #print(kernel.cpu)
 #pastbounds = makePasteBounds(location,kernSize,(worldSize,worldSize),kernel)
 #print(pastbounds[0:4],print(pastbounds[4].cpu))
-#zeros[0,0,(pastbounds[0]):(pastbounds[1]),(pastbounds[2]):(pastbounds[3])] = pastbounds[4]
+def pasteKernel(location, kernSize, worldSize:tuple, kernel:torch.tensor):
+    print("location:", location)
+    pastbounds = makePasteBounds(location, kernSize, worldSize, kernel)
+    distanceLayer = torch.full((worldSize[0],worldSize[1]),(worldSize[0]**2+worldSize[1]**2)**(1/2))
+    print("pasteKernel: ", distanceLayer.shape)
+    print("pasting bounds:", pastbounds[0:4])
+    print("kernel size:", pastbounds[4].shape)
+
+    distanceLayer[(pastbounds[0]):(pastbounds[1]),(pastbounds[2]):(pastbounds[3])] = pastbounds[4] 
+    return distanceLayer
 
 #plt.imshow(zeros[0,0]) 
 #plt.show()
