@@ -29,8 +29,8 @@ class travelLog:
     xLoc: int = 0
     yLoc: int = 0"""
 
-DT = 0.7
-GAMA = 1
+DT = 2
+GAMA = 0.1
 ALPHA = 1
 BETA = 1
 
@@ -92,51 +92,60 @@ class Walker(core.Agent):
     def memoryWalk(self, worldgrid, qualityvalues): 
         
         # Import qualityValuesFromGrid range[0,1] or bool
-        quality = qualityvalues.grid
-        print("Step 1: Import Quality Grid")
-        print(quality)
-        print("memoryWalk: the grid shape is: ", self.gridShape)
+        quality = qualityvalues.grid.clone()
+        #print("Step 1: Import Quality Grid")
+        #print(quality)
+        #print("memoryWalk: the grid shape is: ", self.gridShape)
         # calculate distnace matrix
     
         perceptionMat = mk_insert_distance.pasteKernel([self.pt.x, self.pt.y], len(KERNEL), self.gridShape, KERNEL)
-        print("Step 2: The Distance matrix d_i,j is:")
-        print(perceptionMat)
-        print(perceptionMat.shape)
+        #print("Step 2: The Distance matrix d_i,j is:")
+        #print(perceptionMat)
+        #print(perceptionMat.shape)
         #print(quality.shape)
         #mulitply true quality with the perceptionTensor 
         quality.mul_(perceptionMat[4])
-        print("Step 3: Multiply quality by perceptionMatrix")
-        print(quality) 
-
+        #print("Step 3: Multiply quality by perceptionMatrix")
+        #print(quality) 
+        
         quashedExpec = (1 - np.exp(-self.beta*self.dT))*self.expectation #scalar 
         
-        quality.add_(perceptionMat.mul(-1).add_(1).mul_(self.qualityMem.mul_(self.expectation).add_(quashedExpec))) 
+        quality = quality + (perceptionMat * (-1)+ (1)) * (self.qualityMem * (self.expectation + (quashedExpec))) 
         # quality + [(-1)*perceptionMat + 1 ]*[previousqualityMem*forgetting + expectation_envelope*expectation]    
+        #print("Step 4: Quality + Decay Term:")
+        #print(quality)
 
         self.qualityMem = quality.clone()
 
         costFunc = torch.exp_(-self.gama * perceptionMat / self.dT)# is a 2D tensor
-        
+        #print("the cost function")
+        #print(costFunc)
         quality = quality.mul(costFunc) #now is the attraction matrix. currently only supports one layer 
-        print(quality)
-        probability = torch.divide(quality,torch.sum(quality)) 
-        print(probability)
-        probFlat =  probability.flatten().numpy()
-        print(probFlat)
-        #if the 1D index starts with zero, the algorithm to recover its unflattened index is 
-        # col = idx%length(col) 
-        # row = int(idx/length(col))
-
-        idx1D = np.random.choice(a = len(probFlat), size = 1, replace = True, p = probFlat)  #<- choose which index to move to based on the probability kernel 
-
-        dim1Size = quality.size(dim=1) 
-        if dim1Size != self.gridShape[1]: 
-            print("dim1Size != gridWidth") 
-        newX = idx1D[0] % dim1Size
-        print("newX is:", newX)
-        newY = int(idx1D[0]/ dim1Size)
-        print("newY is:", newY)
-        self.pt = worldgrid.move(self, dpt(newX,newY,0))
+        #print(torch.sum(costFunc))
+        #print("Step 5: Multiply by Cost Function")
+        #print(quality)
+        #print(torch.sum(quality))
+        #print("Step 6: Make Probabilities")
+        if torch.sum(quality) == 0.: 
+            self.rndwalk(self,worldgrid)
+        else:
+            probability = torch.divide(quality,torch.sum(quality)) 
+            #print(probability)
+            probFlat =  probability.flatten().numpy()
+            #print(np.sum(probFlat))
+            #print(probFlat)
+            #if the 1D index starts with zero, the algorithm to recover its unflattened index is 
+            # col = idx%length(col) 
+            # row = int(idx/length(col))
+            idx1D = np.random.choice(a = len(probFlat), size = 1, replace = True, p = probFlat)  #<- choose which index to move to based on the probability kernel 
+            dim1Size = quality.size(dim=1) 
+            if dim1Size != self.gridShape[1]: 
+                print("dim1Size != gridWidth") 
+            newX = idx1D[0] % dim1Size
+            #print("newX is:", newX)
+            newY = int(idx1D[0]/ dim1Size)
+            #print("newY is:", newY)
+            self.pt = worldgrid.move(self, dpt(newY,newX,0))
 
 walker_cache = {} 
 # this cache maintains all pointers of the created walkers in this model! (pointers don't exist in python, but I think it works like that.)
@@ -169,11 +178,13 @@ def restore_walker(walker_data: Tuple):
 
 def makePerlinRaster(widtha,widthb,heighta,heightb): 
     noise = PerlinNoise(octaves=1, seed=8)
+    print(noise.seed)
     xpix, ypix = widthb, heightb
     pic = [[noise([i/xpix, j/ypix]) for j in range(xpix)] for i in range(ypix)]
-    plt.imshow(pic)
+    plt.imshow(np.clip(pic,a_min=0.,a_max=1.0))
+    np.savetxt("../output/perlinRasterSeed_"+str(noise.seed)+".csv",pic,delimiter = ',')
     plt.show()
-    return torch.FloatTensor(pic).clamp_min(0)
+    return torch.FloatTensor(pic).clamp_min(0.)
 
 
 class Model: # inherits nothing
@@ -212,7 +223,7 @@ class Model: # inherits nothing
 
         # Create Vanilla ValueLayer 
         self.raster = makePerlinRaster(0, params['world.width'], 0, params['world.height']) # can source the raster from other places 
-
+        #print(self.raster)
         self.worldValuaA = repast4py.value_layer.SharedValueLayer(comm, box, borders=space.BorderType.Sticky, buffer_size = int(DMAX)
          ,init_value = self.raster)
             # init_values should be made with image 
@@ -221,8 +232,8 @@ class Model: # inherits nothing
         rng = np.random.default_rng(seed=1)
         for i in range(params['walker.count']):
             # get a random x,y location in the grid
-            #pt = self.grid.get_random_local_pt(rng)
-            pt = dpt(7,20)
+            pt = self.grid.get_random_local_pt(rng)
+            #pt = dpt(9,9)
             # create and add the walker to the context
             walker = Walker(i, rank, pt, grid=self.grid)
             self.context.add(walker)

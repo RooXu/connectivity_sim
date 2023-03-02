@@ -2,7 +2,7 @@ from matplotlib import pyplot as plt
 import numpy as np 
 import pandas as pd
 
-data = np.loadtxt("../output/agent_log.csv",delimiter=",",dtype=str)
+data = np.loadtxt("../output/agent_log_103.csv",delimiter=",",dtype=str)
 print(data[1:,3:5])
 print(type(data[1:,3:5]))
 justCoords = data[1:,3:5].astype(np.float)
