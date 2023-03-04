@@ -6,3 +6,4 @@ output/
 *.zip
 *.html
 *.csv
+.Rproj.user
