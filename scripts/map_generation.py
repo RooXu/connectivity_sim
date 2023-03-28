@@ -37,12 +37,12 @@ def get_regions_from_file() -> torch.tensor: #[Region type 1, Region type 2, ...
     # to be added
     return regions 
 
-def make_region_map(regionBoundaries:tuple, width,height) -> torch.tensor:
-    print(regionBoundaries[0,0])
-    region = torch.zeros((len(regionBoundaries),width,height))
-    print(region)
+def make_region_map(regionBoundaries:tuple, width,height) -> torch.tensor: # should return binary map
+    #print(regionBoundaries)
+    region = torch.zeros((len(regionBoundaries),height,width))
+    #print(region)
     for idx, regionBoundary in enumerate(regionBoundaries):
-        print(regionBoundary)
+        #print(regionBoundary)
         region[idx,regionBoundary[0]:regionBoundary[1]+1,regionBoundary[2]: regionBoundary[3]+1] = True
     return region
 
@@ -52,11 +52,11 @@ def select_random_pts_region(atDensity,regionMaps):
 
     # for each region type
     for mapidx, A in enumerate(regionMaps): 
-        print(A)
+        #print(A)
         #start coordinate index at 0
         coordinates_idx = 0
         # declare a numpy array to store coordinates
-        print(int((torch.sum(A))))
+        #print(int((torch.sum(A))))
         coordinates = zeros((int((torch.sum(A))),3)).astype(int)
 
         # for each row in a region type map
@@ -105,7 +105,7 @@ def convolve():
 #plt.colorbar()
 #plt.show()
 
-width = 100
+"""width = 100
 height = 100
 
 # 1. Create two N by N perlin grids for food density and predation risk, respectivley 
@@ -129,5 +129,5 @@ finalFoodDensity = binaryMask[0] * enviroVals
 plt.imshow(finalFoodDensity)
 plt.show()
 # 6. modify mask for predation risk. new_mask = (1- mask)
-finalPredationRisk = (1-binaryMask) * predationRisk
-
+#finalPredationRisk = (1-binaryMask) * predationRisk
+"""

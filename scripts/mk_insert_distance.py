@@ -75,9 +75,10 @@ def pasteKernel(location, kernSize, worldSize:tuple, kernel:torch.tensor):
     #print("location:", location)
     pastbounds = makePasteBounds(location, kernSize, worldSize, kernel)
     distanceLayer = torch.full((worldSize[0],worldSize[1]),(worldSize[0]**2+worldSize[1]**2)**(1/2))
-    #print("pasteKernel: ", distanceLayer.shape)
-    #print("pasting bounds:", pastbounds[0:4])
-    #print("kernel size:", pastbounds[4].shape)
+    print("location", location)
+    print("pasteKernel: ", distanceLayer.shape)
+    print("pasting bounds:", pastbounds[0:4])
+    print("kernel size:", pastbounds[4].shape)
 
     distanceLayer[(pastbounds[0]):(pastbounds[1]+1),(pastbounds[2]):(pastbounds[3]+1)] = pastbounds[4] 
     return distanceLayer
