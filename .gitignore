@@ -2,8 +2,10 @@
 env/
 output/
 .vscode/
+figures/
 # Types of Files to Ignore#
 *.zip
 *.html
 *.csv
 .Rproj.user
+.Rhistory
