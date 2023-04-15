@@ -38,7 +38,7 @@
   # omega1: -5
 
 # Average Y Position Over Time 
-data <- read.csv("output/agent_log_FC100.csv") # Change file names as needed
+data <- read.csv("./simExp/Output/agent_log_FC060_1.csv") # Change file names as needed
 data <- as.data.frame(data)
 averageYDistance <- data %>% group_by(tick) %>% summarise(meanY = mean(y), std = sd(y))
 averageYDistance$meanY[length(averageYDistance$meanY)]
@@ -51,15 +51,15 @@ ggplot(filter(averageYDistance,tick<3650),aes(tick,meanY))+
 # Distribution along Y axis at several points in time 
 yDistrSnapShotT0 <- data %>% filter(tick == 1.1) %>% select(y)
 ggplot(yDistrSnapShotT0)+
-  geom_density(aes(y))+
+  stat_density(aes(y))+
   xlim(0,400)
 
-yDistrSnapShotTx1 <- data %>% filter(tick == 250.1) %>% select(y)
+yDistrSnapShotTx1 <- data %>% filter(tick == 500.1) %>% select(y)
 ggplot(yDistrSnapShotTx1)+
-  geom_density(aes(y))+
+  stat_density(aes(y))+
   xlim(0,400)
 
-yDistrSnapShotTx2 <- data %>% filter(tick == 500.1) %>% select(y)
+yDistrSnapShotTx2 <- data %>% filter(tick == 1000.1) %>% select(y)
 ggplot(yDistrSnapShotTx2)+
   geom_density(aes(y))+
   xlim(0,400)
@@ -69,6 +69,12 @@ ggplot(yDistrSnapShotTF)+
   geom_density(aes(y))+
   xlim(0,400)
 
+ggplot()+
+  stat_density(data = yDistrSnapShotT0,aes(y,fill = 'T=0'),alpha = 1.0)+
+  stat_density(data = yDistrSnapShotTx1,aes(y,fill = 'T=500'),alpha = 0.75)+
+  stat_density(data = yDistrSnapShotTx2,aes(y,fill = 'T=1000'),alpha = 0.60)+
+  stat_density(data = yDistrSnapShotTF,aes(y,fill = 'T=3549'),alpha = 0.5)+
+  xlim(0,400)
 
 # Functional Connectivity measured as interested patch transitions over
 # total patch transitions
