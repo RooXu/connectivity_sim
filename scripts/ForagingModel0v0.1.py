@@ -180,7 +180,8 @@ class Walker(core.Agent):
             try:
                 idx1D = np.random.choice(a = len(probFlat), size = 1, replace = True, p = probFlat)  #<- choose which index to move to based on the probability kernel 
             except:
-                plt.figure(1)
+               print("NAN or INF generated, broke the random choiceer")
+               """ plt.figure(1)
                 plt.imshow(self.qualityMem[0])
                 plt.figure(2)
                 plt.imshow(self.qualityMem[1])
@@ -193,7 +194,7 @@ class Walker(core.Agent):
                 plt.figure(4)
                 plt.imshow(attraction)
                 plt.show()
-                print(attraction[local_X,local_Y])
+                print(attraction[local_X,local_Y])"""
             dim1Size = quality.size(dim=1)
             
             # If the 1D index starts with zero, the algorithm to recover its unflattened index is 
@@ -318,9 +319,9 @@ class Model: # inherits nothing
         self.foodValue = repast4py.value_layer.SharedValueLayer(comm, box, borders=space.BorderType.Sticky, buffer_size = DMAX
          ,init_value = self.onRankFood) # Buffersize here should depend on alpha, not DMAX
         
-        plt.imshow(self.foodValue.grid)
+        """plt.imshow(self.foodValue.grid)
         plt.title(self.rank)
-        plt.show()
+        plt.show()"""
 
         print(self.foodValue.buffered_bounds)
         
@@ -389,8 +390,8 @@ class Model: # inherits nothing
             plt.figure(2)
             plt.imshow(walker.qualityMem[1])
             plt.show()"""
-        plt.imshow(self.foodValue.grid)
-        plt.show()
+        """plt.imshow(self.foodValue.grid)
+        plt.show()"""
         self.agent_logger.close()
     
     def start(self):
