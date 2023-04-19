@@ -18,71 +18,84 @@
 # 4.2 Aggregate fit parameters by matrix condition and make Boxplot 
 # 4.3 Test for significance 
 
-# 5 Do steps 2- 4 for Between T = 0 and 1000
+# 5 Do steps 2- 4 for Between T = 0 and 1
 
-# 6 Do steps 2- 4 for Between T = 1000 and 3650
+# 6 Do steps 2- 4 for Between T = 1 and 3650
 ###########################################
 library(tidyverse)
 library(dplyr)
 library(ggplot2)
 library(broom)
+library(ggpubr)
 getwd()
-# 1 Import and Wrangling. Output -> Everything in the same dataframe 
-# temp = list.files(path ='./simExp/Output'  ,pattern="agent_log.........csv")
-temp000 <- list.files(path ='./simExp/Output'  ,pattern="agent_log_FC100.*..csv")
-temp000 <- sort(temp000)
+#"pattern = agent_log_FC.*..csv"
+plotfitMatrixCondition <- function(filePattern,condition){
+  # 1 Import and Wrangling. Output -> Everything in the same dataframe 
+  # temp = list.files(path ='./simExp/Output'  ,pattern="agent_log.........csv")
+  temp <- list.files(path ='./simExp/Output'  ,pattern=filePattern)
+  temp <- sort(temp)
+  
+  dens_BigList <- lapply(paste('./simExp/Output/',temp,sep = ''), read.csv)
+  names(dens_BigList) = temp
+  head(dens_BigList[[1]])
+  dens_df <- bind_rows(dens_BigList,.id = 'id') %>% 
+    mutate(seed = gsub('.csv','',substring(id,17)),.keep='unused') %>% 
+    select(tick,agent_id,y,seed)
+  dens_df$density <- condition
+  # Choose starting tick 
+  starttick = 1.1
+  dens_startpos <- dens_df %>% filter(tick == starttick)
+  dens_df <- dens_df %>% filter(tick > starttick)
+  
+  colnames(dens_startpos)[3] = 'y*'
+  
+  dens_df <- dens_startpos %>% select(agent_id,seed,`y*`) %>%
+    right_join(dens_df,by = c("agent_id","seed"))
+  
+  diff_df <-dens_df %>% mutate(dy_sqrd = (y-`y*`)^2,.keep='unused') 
+  
+  meandiff_df_gbtick <- diff_df %>% group_by(tick) %>%
+    summarise(mean_dy_sqrd = mean(dy_sqrd),d_dy_sqrd = sd(dy_sqrd))
+  
+  meandiff_df_gbtickNseed <- diff_df %>% group_by(tick,seed) %>%
+    summarise(mean_dy_sqrd = mean(dy_sqrd),d_dy_sqrd = sd(dy_sqrd))
+  
+  meandiff_df_gbtick$slopeRef <- log(meandiff_df_gbtick$tick)
+  meandiff_df_gbtickNseed$slopeRef <- log10(meandiff_df_gbtickNseed$tick)
+  
+  plot_mean_over_replicats <- 
+    ggplot(meandiff_df_gbtick,aes(log(tick),log(mean_dy_sqrd)))+
+    geom_line()+
+    geom_line(aes(log(tick),slopeRef+3),col='red')+
+    #geom_line(aes(tick,mean_dy_sqrd+d_dy_sqrd))+
+    #geom_line(aes(tick,mean_dy_sqrd-d_dy_sqrd))+
+    geom_smooth(formula = y ~ x,col='black',se=TRUE,method = 'lm')
+  
+  
+  
+  plot_per_replicate <- 
+    ggplot(meandiff_df_gbtickNseed,aes(log10(tick),log10(mean_dy_sqrd),col=seed))+
+    geom_line(linewidth = 1)+
+    geom_line(aes(log10(tick),slopeRef+1.5),
+              col='red',
+              linewidth=0.5,
+              linetype = 'dashed')+
+    facet_wrap(~seed)+
+    geom_smooth(formula = y ~ x,col='black',se=T, method = 'lm')+
+    theme_classic()
+  
+  diagnostic_figure <- ggarrange(plot_mean_over_replicats,plot_per_replicate)
+  
+  fitted_models = meandiff_df_gbtickNseed %>%
+    group_by(seed) %>% do(model = tidy(lm(log(mean_dy_sqrd) ~ log(tick),
+                                          data = .)))
+  
+  coefficients <- fitted_models %>% 
+    summarize(intercept = model$estimate[1],slope = model$estimate[2])
+  
+  coefficients$density = condition
+  
+  return(list(diagnostic_figure,coefficients))
+}
 
-dens000_BigList <- lapply(paste('./simExp/Output/',temp000,sep = ''), read.csv)
-names(dens000_BigList) = temp000
-head(dens000_BigList[[1]])
-dens000_df <- bind_rows(dens000_BigList,.id = 'id') %>% 
-  mutate(seed = gsub('.csv','',substring(id,17)),.keep='unused') %>% 
-  select(tick,agent_id,y,seed)
-dens000_df$density <- 0
-# Choose starting tick 
-starttick = 1.1
-dens000_startpos <- dens000_df %>% filter(tick == starttick)
-dens000_df <- dens000_df %>% filter(tick > starttick)
-
-colnames(dens000_startpos)[3] = 'y*'
-
-dens000_df <- dens000_startpos %>% select(agent_id,seed,`y*`) %>%
-  right_join(dens000_df,by = c("agent_id","seed"))
-
-diff000_df <-dens000_df %>% mutate(dy_sqrd = (y-`y*`)^2,.keep='unused') 
-
-meandiff000_df_gbtick <- diff000_df %>% group_by(tick) %>%
-  summarise(mean_dy_sqrd = mean(dy_sqrd),d_dy_sqrd = sd(dy_sqrd))
-
-meandiff000_df_gbtickNseed <- diff000_df %>% group_by(tick,seed) %>%
-  summarise(mean_dy_sqrd = mean(dy_sqrd),d_dy_sqrd = sd(dy_sqrd))
-
-meandiff000_df_gbtick$slopeRef <- log(meandiff000_df_gbtick$tick)
-meandiff000_df_gbtickNseed$slopeRef <- log10(meandiff000_df_gbtickNseed$tick)
-ggplot(meandiff000_df_gbtick,aes(log(tick),log(mean_dy_sqrd)))+
-  geom_line()+
-  geom_line(aes(log(tick),slopeRef+3),col='red')+
-  #geom_line(aes(tick,mean_dy_sqrd+d_dy_sqrd))+
-  #geom_line(aes(tick,mean_dy_sqrd-d_dy_sqrd))+
-  geom_smooth(formula = y ~ x,col='black',se=TRUE,method = 'lm')
-
-
-
-ggplot(meandiff000_df_gbtickNseed,aes(log10(tick),log10(mean_dy_sqrd),col=seed))+
-  geom_line(linewidth = 1)+
-  geom_line(aes(log10(tick),slopeRef+1.5),col='red',linewidth=0.5,linetype = 'dashed')+
-  facet_wrap(~seed)+
-  geom_smooth(formula = y ~ x,col='black',se=T, method = 'lm')+
-  theme_classic()
-
-fitted_models = meandiff000_df_gbtickNseed %>% group_by(seed) %>% do(model = tidy(lm(log(mean_dy_sqrd) ~ log(tick), data = .)))
-
-coefficients <- fitted_models %>% summarize(intercept = model$estimate[1],slope = model$estimate[2])
-
-coefficients$density = 0
-
-ggplot(coefficients, aes(x=density,y=slope))+
-  geom_boxplot()
-
-ggplot(coefficients, aes(x=density,y=intercept))+
-  geom_boxplot()
+heyo <- plotfitMatrixCondition("agent_log_FC020.*..csv",0)
