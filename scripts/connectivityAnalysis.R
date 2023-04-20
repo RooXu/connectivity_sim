@@ -36,51 +36,68 @@
   # expectation.type0: 0.3
   # omega0: 5
   # omega1: -5
+rm(list = ls())
+source("./scripts/FCAnal.R")
+starttick = 1825.1 
+endtick = 3649.1
+fc000 <- funcConnCalc("agent_log_FC000.*..csv",0,starttick,endtick)
+fc020 <- funcConnCalc("agent_log_FC020.*..csv",20,starttick,endtick)
+fc040 <- funcConnCalc("agent_log_FC040.*..csv",40,starttick,endtick)
+fc060 <- funcConnCalc("agent_log_FC060.*..csv",60,starttick,endtick)
+fc080 <- funcConnCalc("agent_log_FC080.*..csv",80,starttick,endtick)
+fc100 <- funcConnCalc("agent_log_FC100.*..csv",100,starttick,endtick)
 
-# Average Y Position Over Time 
-data <- read.csv("./simExp/Output/agent_log_FC060_1.csv") # Change file names as needed
-data <- as.data.frame(data)
-averageYDistance <- data %>% group_by(tick) %>% summarise(meanY = mean(y), std = sd(y))
-averageYDistance$meanY[length(averageYDistance$meanY)]
-averageYDistance$std[length(averageYDistance$meanY)]
-ggplot(filter(averageYDistance,tick<3650),aes(tick,meanY))+
-  geom_line()+
-  geom_line(aes(tick,(meanY+std)),col = 'blue',alpha = 0.3)+
-  geom_line(aes(tick,(meanY-std)),col = 'blue',alpha = 0.3)+
-  ylim(0,400)
-# Distribution along Y axis at several points in time 
-yDistrSnapShotT0 <- data %>% filter(tick == 1.1) %>% select(y)
-ggplot(yDistrSnapShotT0)+
-  stat_density(aes(y))+
-  xlim(0,400)
+fc_al <- bind_rows(fc000,fc020,fc040,fc060,fc080,fc100)
 
-yDistrSnapShotTx1 <- data %>% filter(tick == 500.1) %>% select(y)
-ggplot(yDistrSnapShotTx1)+
-  stat_density(aes(y))+
-  xlim(0,400)
+# Plotting
+my_theme <- theme_pubr(
+  base_size = 12,
+  base_family = "sans",
+  border = FALSE,
+  margin = TRUE,
+  legend = c("top", "bottom", "left", "right", "none"),
+  x.text.angle = 0
+)
 
-yDistrSnapShotTx2 <- data %>% filter(tick == 1000.1) %>% select(y)
-ggplot(yDistrSnapShotTx2)+
-  geom_density(aes(y))+
-  xlim(0,400)
+funconn_ACplot <- ggline(fc_al,
+                         x="density",
+                         y="funconn_AC",
+                         add = c("mean_sd",'point'),
+                         add.params = list(color ='black',size = 0.5), 
+                         point.color='red',
+                         shape = 24,
+                         stroke=1,
+                         palette = "jco",
+                         plot_type = 'b',
+                         ylab = "Likelihood of Moving from Patch A to Patch C",
+                         xlab = "Matrix Occupation Density",
+                         ylim = c(0,1))+
+  stat_compare_means(label = "p.signif", 
+                     method = "t.test",
+                     ref.group = "0") +
+  my_theme
 
-yDistrSnapShotTF <-  data %>% filter(tick == 3649.1) %>% select(y)
-ggplot(yDistrSnapShotTF)+
-  geom_density(aes(y))+
-  xlim(0,400)
+funconn_ABplot <- ggline(fc_al, 
+       x="density",
+       y="funconn_AB",
+       add = c("mean_sd",'point'),
+       add.params = list(color ='black',size = 0.5),  
+       point.color='red',
+       shape = 24,
+       stroke=1,
+       palette = "jco",
+       plot_type = 'b',
+       ylab = "Likelihood of Moving from Patch A to Patch B",
+       xlab = "Matrix Occupation Density",
+       ylim = c(0,1)) +
+  stat_compare_means(label = "p.signif", 
+                     method = "t.test",
+                     ref.group = "0")+
+  my_theme
 
-ggplot()+
-  stat_density(data = yDistrSnapShotT0,aes(y,fill = 'T=0'),alpha = 1.0)+
-  stat_density(data = yDistrSnapShotTx1,aes(y,fill = 'T=500'),alpha = 0.75)+
-  stat_density(data = yDistrSnapShotTx2,aes(y,fill = 'T=1000'),alpha = 0.60)+
-  stat_density(data = yDistrSnapShotTF,aes(y,fill = 'T=3549'),alpha = 0.5)+
-  xlim(0,400)
+output <- ggarrange(funconn_ACplot,funconn_ABplot)
 
-# Functional Connectivity measured as interested patch transitions over
-# total patch transitions
-countinAT0 <- data %>% filter(tick == 1.1 & y < 400/3) %>% summarise(count = n())
-countinATF <- data %>% filter(tick == 3649.1 & y < 400/3) %>% summarise(count = n())
-countinBTF <- data %>% filter(tick == 3649.1 & y > 400/3 & y < 400*2/3) %>% summarise(count = n())
-countinCTF <- data %>% filter(tick == 3649.1 & y > 400*2/3) %>% summarise(count = n())
+ggsave(filename = paste("./figures/fc_ti", starttick, "tf",endtick,".pdf"),plot=output,width = 10, height = 5, unit= 'in')
 
-FC = countinATF/(countinATF+countinBTF+countinCTF)
+compare_means(funconn_AC ~ density, ref.group = "0", data = fc_al,method = 't.test')
+compare_means(funconn_AB ~ density, ref.group = "0", data = fc_al,method = 't.test')
